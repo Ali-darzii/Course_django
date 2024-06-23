@@ -1,5 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.dispatch import receiver
+from django.db.models.signals import post_save
+from django.contrib.auth import user_logged_in
 
 
 # statics
@@ -54,3 +57,36 @@ class UserDevice(models.Model):
         verbose_name = 'User Devices'
         verbose_name_plural = 'User Device'
         db_table = 'UserDevice_DB'
+
+
+@receiver(signal=post_save, sender=User)
+def create_user_logins(sender, instance, created, **kwargs):
+    """ after User created, Create User Login """
+    if created:
+        user_logins = UserLogins(user=instance)
+        user_logins.save()
+
+
+@receiver(signal=user_logged_in)
+def create_user_ip(sender, user, request, **kwargs):
+    """ after user logged in, create user ip"""
+    ip = UserIP(ip=get_client_ip(request), user_logins=user.user_logins)
+    user.user_logins.no_logins += 1
+    user.save()
+    ip.save()
+
+
+@receiver(signal=user_logged_in)
+def create_user_device(sender, user, request, **kwargs):
+    """ after user logged in, create user device"""
+    user_device = UserDevice().get_user_device(request, user)
+    user_device.save()
+
+
+@receiver(signal=user_logged_in)
+def login_failed(sender, request, user, **kwargs):
+    """ after user login failed """
+    user.user_logins.failed_attempts += 1
+    ip = UserIP(ip=get_client_ip(request), user_logins=user.user_logins, failed=True)
+    ip.save()
+    user.save()
